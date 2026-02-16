@@ -1,0 +1,27 @@
+# Environment
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data
+data/preferences.json
+
+# Assets backups
+assets/brand_voice_guide.bak.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Temp
+*.tmp
+temp_images/
