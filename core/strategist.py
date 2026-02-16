@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 import anthropic
@@ -260,6 +261,18 @@ TOOL_DEFINITIONS = [
     },
 ]
 
+# ── Progress status messages for each tool ───────────────────
+
+TOOL_STATUS_MESSAGES: dict[str, str] = {
+    "generate_text_content": "✍️ Crafting content...",
+    "generate_image": "🎨 Generating image...",
+    "apply_brand_filter": "🖼️ Applying brand filter...",
+    "present_options": "📋 Preparing options...",
+    "generate_calendar": "📅 Building calendar...",
+    "save_approval": "💾 Saving your choice...",
+    "publish_content": "📤 Publishing...",
+}
+
 
 # ── Tool result wrapper ──────────────────────────────────────
 
@@ -290,6 +303,7 @@ class Strategist:
         session: Session,
         new_user_content: list[dict],
         memory_context: str = "",
+        progress_callback: Callable[[str], Awaitable[None]] | None = None,
     ) -> list[AgentAction]:
         """Execute one full agent turn.
 
@@ -317,7 +331,14 @@ class Strategist:
         actions: list[AgentAction] = []
         max_iterations = 10  # safety cap on tool call loops
 
-        for _ in range(max_iterations):
+        for iteration in range(max_iterations):
+            # Notify progress on subsequent iterations (first one is handled by caller)
+            if progress_callback and iteration > 0:
+                try:
+                    await progress_callback("⏳ Thinking...")
+                except Exception:
+                    pass
+
             # Call Claude (sync API, run in thread to avoid blocking event loop)
             response = await asyncio.to_thread(
                 self.client.messages.create,
@@ -356,6 +377,14 @@ class Strategist:
             tool_results = []
             for block in response.content:
                 if block.type == "tool_use":
+                    # Notify progress with tool-specific status
+                    if progress_callback:
+                        status = TOOL_STATUS_MESSAGES.get(block.name, "⏳ Working...")
+                        try:
+                            await progress_callback(status)
+                        except Exception:
+                            pass
+
                     try:
                         result = await self._execute_tool(
                             block.name, block.input, session
@@ -429,9 +458,11 @@ class Strategist:
             side_effects.append(AgentAction(type="text", text=preview))
 
         summary = (
-            f"Content generated successfully.\n\n"
-            f"Option A ({len(caption_a.split())} words): {caption_a[:150]}...\n\n"
-            f"Option B ({len(caption_b.split())} words): {caption_b[:150]}..."
+            f"Content generated and ALREADY SHOWN to Joyce in chat. "
+            f"Do NOT repeat the content. "
+            f"Option A: {len(caption_a.split())} words. "
+            f"Option B: {len(caption_b.split())} words. "
+            f"Now call present_options to let her pick."
         )
 
         return ToolResult(content=summary, side_effects=side_effects)
@@ -542,7 +573,10 @@ class Strategist:
             return ToolResult(content=f"Calendar generation failed: {e}")
 
         return ToolResult(
-            content=f"Calendar generated with {num_posts} posts.",
+            content=(
+                f"Calendar generated with {num_posts} posts and ALREADY SHOWN to Joyce. "
+                f"Do NOT repeat the calendar. Ask if she'd like changes."
+            ),
             side_effects=[
                 AgentAction(type="text", text=calendar_text),
             ],
@@ -595,6 +629,7 @@ class Strategist:
                 text=f"Approved! Here's your final post — ready to copy:\n\n{clean}",
             ),
         ]
+        # Note: tell Claude the content is already shown so it doesn't repeat it
 
         # Include the image if one was generated for this option
         img = session.generated_images.get(f"option_{option_key}")
@@ -604,7 +639,11 @@ class Strategist:
             side_effects.append(AgentAction(type="photo", image_bytes=session.uploaded_photo, text="Your post photo"))
 
         return ToolResult(
-            content=f"Post saved to preference memory. Option {option_key.upper()} approved.",
+            content=(
+                f"Post saved to preference memory. Option {option_key.upper()} approved. "
+                f"The final clean copy has ALREADY BEEN SHOWN to Joyce in chat. "
+                f"Do NOT repeat the post content. Just confirm briefly and offer next steps."
+            ),
             side_effects=side_effects,
         )
 

@@ -1,5 +1,6 @@
 """Telegram bot handlers — thin I/O layer for the Strategist agent."""
 
+import asyncio
 import io
 import logging
 import shutil
@@ -109,6 +110,64 @@ async def _dispatch_actions(message, actions: list[AgentAction]):
 
 
 # ============================================================
+# Progress helper — status message + typing heartbeat
+# ============================================================
+
+async def _run_with_progress(
+    message,
+    strategist: Strategist,
+    session,
+    user_content: list[dict],
+    memory_context: str,
+) -> list[AgentAction]:
+    """Run a strategist turn with live progress feedback in Telegram."""
+    chat = message.chat
+
+    # Send initial status message
+    status_msg = await message.reply_text("⏳ Thinking...")
+
+    # Typing heartbeat — re-sends TYPING every 4s so the indicator stays alive
+    typing_active = True
+
+    async def _typing_heartbeat():
+        while typing_active:
+            try:
+                await chat.send_action(ChatAction.TYPING)
+            except Exception:
+                pass
+            await asyncio.sleep(4)
+
+    heartbeat_task = asyncio.create_task(_typing_heartbeat())
+
+    # Progress callback — edits the status message in-place
+    async def _progress_callback(status_text: str):
+        try:
+            await status_msg.edit_text(status_text)
+        except Exception:
+            pass  # message unchanged or already deleted
+
+    try:
+        actions = await strategist.run_turn(
+            session, user_content, memory_context,
+            progress_callback=_progress_callback,
+        )
+    finally:
+        # Cleanup: stop heartbeat, delete status message
+        typing_active = False
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+
+    return actions
+
+
+# ============================================================
 # /start and /help
 # ============================================================
 
@@ -183,14 +242,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Build user content
     user_content = [{"type": "text", "text": update.message.text}]
 
-    # Show typing indicator
-    await update.message.chat.send_action(ChatAction.TYPING)
-
     try:
         # Serialize turns per user
         async with sm.get_lock(user_id):
             memory_context = sm.load_memory_context(user_id)
-            actions = await strategist.run_turn(session, user_content, memory_context)
+            actions = await _run_with_progress(
+                update.message, strategist, session, user_content, memory_context,
+            )
 
         logger.info("Strategist returned %d actions for user %s", len(actions), user_id)
 
@@ -233,12 +291,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_content = [{"type": "text", "text": text}]
 
-    await update.message.chat.send_action(ChatAction.TYPING)
-
     try:
         async with sm.get_lock(user_id):
             memory_context = sm.load_memory_context(user_id)
-            actions = await strategist.run_turn(session, user_content, memory_context)
+            actions = await _run_with_progress(
+                update.message, strategist, session, user_content, memory_context,
+            )
 
         await _dispatch_actions(update.message, actions)
     except Exception as e:
@@ -260,16 +318,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = sm.get_or_create(user_id)
 
+    # Echo the button press as visible text so there's a record in chat
+    button_label = query.data.replace("_", " ").title()  # "pick_a" → "Pick A"
+    await query.message.reply_text(f"Joyce selected: {button_label}")
+
     # Translate button press into a text message for the strategist
     button_data = query.data
     user_content = [{"type": "text", "text": f"[BUTTON: {button_data}]"}]
 
-    await query.message.chat.send_action(ChatAction.TYPING)
-
     try:
         async with sm.get_lock(user_id):
             memory_context = sm.load_memory_context(user_id)
-            actions = await strategist.run_turn(session, user_content, memory_context)
+            actions = await _run_with_progress(
+                query.message, strategist, session, user_content, memory_context,
+            )
 
         await _dispatch_actions(query.message, actions)
     except Exception as e:
