@@ -58,6 +58,7 @@ def save_approval(
         "chosen_option": chosen_option,
         "style_used": style_used,
         "content_type": content_type,
+        "caption": caption,
         "caption_length_words": word_count,
         "has_question_hook": has_question_hook,
         "has_personal_story": has_personal_story,
@@ -75,6 +76,12 @@ def save_approval(
         json.dumps(preferences, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def get_last_approval() -> dict | None:
+    """Return the most recently approved post, or None if no history."""
+    preferences = load_preferences()
+    return preferences[-1] if preferences else None
 
 
 def build_preference_summary() -> str:
@@ -136,7 +143,7 @@ def build_preference_summary() -> str:
 
     # Build summary
     lines = [
-        f"Based on {total} recently approved posts:",
+        f"Verbal tone & writing style patterns from {total} recently approved posts:",
         f"- Prefers Option {'A (reflective)' if option_a_count >= option_b_count else 'B (direct)'} — chosen {max(option_a_count, option_b_count)}/{total} times",
         f"- Preferred caption length: {min_words}-{max_words} words (average {avg_words})",
         f"- Question hooks: {'often' if question_hooks > total // 2 else 'sometimes'} used ({question_hooks}/{total})",

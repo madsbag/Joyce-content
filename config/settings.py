@@ -2,10 +2,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
-# Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env", override=True)
 ASSETS_DIR = BASE_DIR / "assets"
 DATA_DIR = BASE_DIR / "data"
 BRAND_VOICE_FILE = ASSETS_DIR / "brand_voice_guide.txt"
@@ -35,6 +33,11 @@ REDNOTE_IMAGE_SIZE = "1024x1792"  # 9:16 vertical for Rednote
 # Preference memory
 MAX_PREFERENCES = 10
 
+# Strategist agent
+MAX_TOKENS_STRATEGIST = int(os.getenv("MAX_TOKENS_STRATEGIST", "2048"))
+SESSION_STORAGE_DIR = DATA_DIR / "sessions"
+MAX_RECENT_SESSIONS = 3
+
 # Brand colors (for image overlays)
 BRAND_COLORS = {
     "warm_gold": "#C4A35A",
@@ -49,3 +52,16 @@ INSTAGRAM_MAX_CAPTION = 2200
 INSTAGRAM_MAX_HASHTAGS = 30
 REDNOTE_MAX_TITLE = 20
 REDNOTE_MAX_BODY_CHARS = 1000
+
+# ── Publishing ────────────────────────────────────────────────
+# Master switch — set to "true" to enable publish buttons after approval
+PUBLISH_ENABLED = os.getenv("PUBLISH_ENABLED", "false").lower() == "true"
+
+# Instagram Graph API
+INSTAGRAM_APP_ID = os.getenv("INSTAGRAM_APP_ID", "")
+INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "")
+INSTAGRAM_TOKEN_FILE = BASE_DIR / "config" / "instagram_token.json"
+GRAPH_API_VERSION = "v21.0"
+
+# Image hosting for Instagram (Graph API needs a public URL)
+IMGBB_API_KEY = os.getenv("IMGBB_API_KEY", "")

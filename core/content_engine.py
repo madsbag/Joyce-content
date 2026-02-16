@@ -1,11 +1,14 @@
 """Central content generation engine — wraps Claude API for all content creation."""
 
+import json
 import anthropic
 from config.settings import ANTHROPIC_API_KEY, CLAUDE_MODEL, MAX_TOKENS_POST, MAX_TOKENS_CALENDAR
 from prompts.system_prompt import (
     build_system_prompt,
     build_calendar_system_prompt,
     build_image_prompt_system,
+    build_production_prompt,
+    build_production_calendar_prompt,
 )
 from core.memory import build_preference_summary
 from utils.formatting import parse_dual_options
@@ -124,6 +127,88 @@ class ContentEngine:
 
         messages = [{"role": "user", "content": user_message}]
         return self._call_claude(system_prompt, messages, max_tokens=300)
+
+    # ── New strategist-driven methods ──────────────────────────
+
+    def generate_from_brief(self, brief: dict) -> dict:
+        """Execute a structured text brief from the strategist.
+
+        The brief contains all creative decisions already made. The production
+        copywriter just writes to spec.
+
+        Args:
+            brief: Structured brief dict with keys like topic, content_type,
+                   form, style, hook_direction, words_to_use, etc.
+
+        Returns:
+            Parsed result with option_a, option_b, and raw response.
+        """
+        system_prompt = build_production_prompt()
+
+        # Format the brief as a clear user message
+        brief_text = f"CREATIVE BRIEF:\n\n"
+        brief_text += f"Platform: {brief.get('platform', 'instagram')}\n"
+        brief_text += f"Topic: {brief.get('topic', '')}\n"
+        brief_text += f"Content Type: {brief.get('content_type', 'feed_post')}\n"
+        brief_text += f"Form: {brief.get('form', 'prose')}\n"
+        brief_text += f"Style: {brief.get('style', 'conversational')}\n"
+        brief_text += f"Word Count Target: {brief.get('word_count_target', 200)}\n"
+        brief_text += f"Emotional Register: {brief.get('emotional_register', 'warm, grounded')}\n\n"
+
+        brief_text += f"Hook Direction: {brief.get('hook_direction', 'Choose an engaging opening')}\n"
+        brief_text += f"Content Direction: {brief.get('content_direction', '')}\n"
+        brief_text += f"CTA Direction: {brief.get('cta_direction', 'Soft engagement invitation')}\n\n"
+
+        words_use = brief.get("words_to_use", [])
+        words_avoid = brief.get("words_to_avoid", [])
+        if words_use:
+            brief_text += f"Words to USE: {', '.join(words_use)}\n"
+        if words_avoid:
+            brief_text += f"Words to AVOID: {', '.join(words_avoid)}\n"
+
+        brief_text += f"\nHashtag Guidance: {brief.get('hashtag_guidance', '8-12 hashtags')}\n"
+
+        user_script = brief.get("user_script", "")
+        if user_script:
+            brief_text += (
+                f"\nUSER'S OWN SCRIPT (refine this — do NOT abandon it):\n"
+                f"{user_script}\n"
+            )
+
+        messages = [{"role": "user", "content": brief_text}]
+        response = self._call_claude(system_prompt, messages, MAX_TOKENS_POST)
+        return parse_dual_options(response)
+
+    def generate_calendar_from_brief(
+        self,
+        brief: str,
+        platforms: list[str],
+        num_posts: int,
+    ) -> str:
+        """Execute a calendar brief from the strategist.
+
+        Args:
+            brief: Strategist's calendar brief text (themes, angles, variation notes)
+            platforms: Target platforms
+            num_posts: Number of posts
+
+        Returns:
+            Raw calendar text.
+        """
+        system_prompt = build_production_calendar_prompt()
+        platform_str = " and ".join(platforms) if len(platforms) > 1 else platforms[0]
+
+        user_message = (
+            f"CALENDAR BRIEF:\n\n"
+            f"Platform: {platform_str}\n"
+            f"Number of posts: {num_posts}\n\n"
+            f"{brief}"
+        )
+
+        messages = [{"role": "user", "content": user_message}]
+        return self._call_claude(system_prompt, messages, MAX_TOKENS_CALENDAR)
+
+    # ── Legacy methods (kept for backward compatibility) ─────
 
     def _call_claude(
         self,

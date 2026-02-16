@@ -2,7 +2,7 @@
 
 import io
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageFilter
 from config.settings import BRAND_COLORS, FONTS_DIR, LOGO_DIR
 
 
@@ -143,24 +143,82 @@ def add_logo(image_bytes: bytes, opacity: float = 0.6) -> bytes:
     return output.getvalue()
 
 
-def process_uploaded_image(
+def apply_brand_filter(
     image_bytes: bytes,
-    overlay_text: str,
     add_brand_logo: bool = True,
 ) -> bytes:
-    """Full pipeline: add text overlay and optionally logo to uploaded image.
+    """Apply brand-consistent color filter and optionally logo to uploaded image.
+
+    Transforms the image to match Joyce's brand aesthetic:
+    warm tones, soft contrast, gentle golden-hour feel.
 
     Args:
         image_bytes: Joyce's uploaded photo as bytes
-        overlay_text: Hook line or quote to overlay
         add_brand_logo: Whether to add the logo watermark
 
     Returns:
         Processed image as PNG bytes
     """
-    result = add_text_overlay(image_bytes, overlay_text)
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    # 1. Warm tone shift — push slightly toward golden/warm hues
+    # Slightly boost color warmth
+    enhancer = ImageEnhance.Color(img)
+    img = enhancer.enhance(1.05)  # Subtle saturation bump
+
+    # Boost brightness slightly for that airy feel
+    enhancer = ImageEnhance.Brightness(img)
+    img = enhancer.enhance(1.03)
+
+    # Soften contrast slightly for a gentler look
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(0.95)
+
+    # 2. Warm color overlay — blend a very faint gold tint
+    warm_overlay = Image.new("RGB", img.size, (255, 243, 224))  # Warm cream/gold
+    img = Image.blend(img, warm_overlay, alpha=0.06)  # Very subtle
+
+    # 3. Slight soft glow (optional gentle blur blend for dreamy feel)
+    soft = img.filter(ImageFilter.GaussianBlur(radius=2))
+    img = Image.blend(img, soft, alpha=0.08)  # 8% blend for subtle softness
+
+    # Save intermediate result
+    output = io.BytesIO()
+    img.save(output, format="PNG", quality=95)
+    result = output.getvalue()
+
+    # 4. Add logo watermark if available
     if add_brand_logo:
         result = add_logo(result)
+
+    return result
+
+
+def process_uploaded_image(
+    image_bytes: bytes,
+    overlay_text: str = "",
+    add_brand_logo: bool = True,
+) -> bytes:
+    """Full pipeline: apply brand filter and optionally add text overlay.
+
+    Args:
+        image_bytes: Joyce's uploaded photo as bytes
+        overlay_text: Hook line or quote to overlay (optional, empty = no overlay)
+        add_brand_logo: Whether to add the logo watermark
+
+    Returns:
+        Processed image as PNG bytes
+    """
+    # Apply brand color filter first
+    result = apply_brand_filter(image_bytes, add_brand_logo=False)
+
+    # Add text overlay only if explicitly requested
+    if overlay_text:
+        result = add_text_overlay(result, overlay_text)
+
+    if add_brand_logo:
+        result = add_logo(result)
+
     return result
 
 

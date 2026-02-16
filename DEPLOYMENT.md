@@ -248,6 +248,7 @@ restartPolicyType = "always"
 | `CLAUDE_MODEL` | No | Default: `claude-sonnet-4-5-20250929` |
 | `MAX_TOKENS_POST` | No | Default: `3000` |
 | `MAX_TOKENS_CALENDAR` | No | Default: `8000` |
+| `MAX_TOKENS_STRATEGIST` | No | Default: `2048` |
 
 ---
 
@@ -278,6 +279,16 @@ The system reads the brand voice file fresh on every API call — no restart nee
 **Important for Railway/Streamlit Cloud:** The file system is ephemeral on these platforms. Brand voice updates via Telegram/Streamlit will persist until the next deploy. For permanent updates:
 - Update the `.txt` file in the GitHub repo and push
 - Or use Option C (DigitalOcean) where file changes persist
+- Or attach a Railway volume (recommended — see below)
+
+### Persistent Volume (Recommended for Railway)
+
+Session memory (`data/sessions/`) and preferences (`data/preferences.json`) are stored on the filesystem. To persist them across redeploys:
+
+1. In Railway dashboard, go to your service > **Settings** > **Volumes**
+2. Click **Add Volume**
+3. Mount path: `/app/data`
+4. This maps the `data/` directory to a persistent volume, preserving session memory, preferences, and brand voice updates
 
 ---
 
